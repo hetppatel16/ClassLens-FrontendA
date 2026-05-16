@@ -58,8 +58,13 @@ export function SubjectFromDeptPage({ token }: SubjectFromDeptPageProps) {
       if (response.ok) {
         const data = await response.json();
 
+        // support DRF pagination or wrapper objects: { results: [...] } or { data: [...] }
+        const rawList = Array.isArray(data)
+          ? data
+          : data?.results ?? data?.data ?? data?.items ?? [];
+
         // Normalize into our TS interface shape
-        const normalized: SubjectFromDept[] = (data || []).map((item: any) => ({
+        const normalized: SubjectFromDept[] = (rawList || []).map((item: any) => ({
           id: item.id,
           department: item.department,
           department_name: item.department_name,

@@ -67,8 +67,16 @@ export function SubjectFromDeptForm({
           }
         );
 
-        if (deptRes.ok) setDepartments(await deptRes.json());
-        if (subsRes.ok) setSubjects(await subsRes.json());
+        if (deptRes.ok) {
+          const d = await deptRes.json();
+          const deptList = Array.isArray(d) ? d : d?.results ?? d?.data ?? d?.items ?? [];
+          setDepartments(deptList.map((x: any) => ({ id: x.id ?? x.pk ?? x.department_id, name: x.name ?? x.department_name ?? String(x) })));
+        }
+        if (subsRes.ok) {
+          const s = await subsRes.json();
+          const subsList = Array.isArray(s) ? s : s?.results ?? s?.data ?? s?.items ?? [];
+          setSubjects(subsList.map((x: any) => ({ id: x.id, code: x.code ?? x.subject_code ?? String(x.code), name: x.name ?? x.title ?? String(x) })));
+        }
       } catch (err) {
         console.log("[v0] Load dept/subjects error");
       }

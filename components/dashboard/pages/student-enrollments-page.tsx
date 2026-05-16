@@ -49,13 +49,22 @@ export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        const normalized: StudentEnrollment[] = (data || []).map((e: any) => ({
-          id: e.id,
-          student_prn: e.student_prn,
-          subject: e.subject,
-          subject_name: e.subject_name,
-          subject_code: e.subject_code,
+
+        const rawList = Array.isArray(data)
+          ? data
+          : data?.results ?? data?.data ?? data?.items ?? [];
+
+        const normalized: StudentEnrollment[] = (rawList || []).map((e: any) => ({
+          id: e.id ?? e.pk ?? null,
+          // support both 'student_prn' and 'prn' from different tables
+          student_prn: e.student_prn ?? e.prn ?? e.student_prn,
+          // subject may be numeric id (subject / subject_id) or a subject_code string from apienrollment
+          subject: e.subject ?? e.subject_id ?? (typeof e.subject === "number" ? e.subject : null),
+          subject_name: e.subject_name ?? (e.subject && e.subject.name) ?? "",
+          subject_code:
+            e.subject_code ?? (e.subject && e.subject.code) ?? (typeof e.subject === "string" ? e.subject : ""),
         }));
+
         setEnrollments(normalized);
       } else {
         console.error("Failed to fetch student enrollments:", response.status);

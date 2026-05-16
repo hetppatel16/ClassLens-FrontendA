@@ -53,7 +53,13 @@ export function StudentEnrollmentForm({
         if (!res.ok) return console.error("Failed to fetch subjects");
 
         const data = await res.json();
-        setSubjects(data);
+        const raw = Array.isArray(data) ? data : data?.results ?? data?.data ?? data?.items ?? [];
+        const normalized = (raw || []).map((x: any) => ({
+          id: x.id ?? x.pk ?? x.subject_id,
+          code: x.code ?? x.subject_code ?? String(x.code ?? x.subject_code ?? ""),
+          name: x.name ?? x.title ?? String(x.name ?? x.title ?? ""),
+        }));
+        setSubjects(normalized);
       } catch (err) {
         console.error("[v0] subjects fetch error:", err);
       }

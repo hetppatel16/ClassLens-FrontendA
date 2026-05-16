@@ -20,6 +20,30 @@ interface Teacher {
   department_name: string;
 }
 
+const normalizeTeachers = (payload: unknown): Teacher[] => {
+  const container = payload as {
+    results?: unknown;
+    data?: unknown;
+    items?: unknown;
+  };
+
+  const list = Array.isArray(payload)
+    ? payload
+    : container.results ?? container.data ?? container.items ?? [];
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map((item: any) => ({
+    id: String(item.id ?? item.pk ?? item.teacher_id ?? ""),
+    name: String(item.name ?? item.full_name ?? ""),
+    email: String(item.email ?? ""),
+    phone: String(item.phone ?? item.phone_number ?? ""),
+    department_name: String(
+      item.department_name ?? item.department?.name ?? item.department ?? ""
+    ),
+  }));
+};
+
 export function TeachersPage({ token }: TeachersPageProps) {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +70,7 @@ export function TeachersPage({ token }: TeachersPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setTeachers(data);
+        setTeachers(normalizeTeachers(data));
       }
     } catch (err) {
       console.log("[v0] Teachers fetch error:", err);
@@ -74,7 +98,7 @@ export function TeachersPage({ token }: TeachersPageProps) {
       );
 
       if (response.ok) {
-        setTeachers(teachers.filter((t) => t.id !== id));
+        setTeachers((prev) => prev.filter((t) => t.id !== id));
       } else {
         console.error("Delete failed:", await response.text());
       }
