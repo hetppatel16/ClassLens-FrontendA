@@ -95,7 +95,7 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
   const [divisions, setDivisions] = useState<Division[]>([]);
 
   const [selectedDept, setSelectedDept] = useState("");
-  const [selectedProgram, setSelectedProgram] = useState("");
+  const [selectedYear, setSelectedYear] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("");
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
@@ -107,11 +107,16 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
 
   useEffect(() => {
     if (!token) return;
+    fetchSubjects();
+  }, [token, selectedDept, selectedYear]);
+
+  useEffect(() => {
+    if (!token) return;
     const delayDebounceFn = setTimeout(() => {
       fetchAnalytics();
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [token, selectedDept, selectedProgram, selectedSubject, selectedDivision, search, threshold]);
+  }, [token, selectedDept, selectedYear, selectedSubject, selectedDivision, search, threshold]);
 
   const fetchFilters = async () => {
     try {
@@ -122,15 +127,6 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
       if (deptRes.ok) {
         const data = await deptRes.json();
         setDepartments(data);
-      }
-
-      const subRes = await fetch(
-        process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/subjects/",
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (subRes.ok) {
-        const data = await subRes.json();
-        setSubjects(data.results || data);
       }
 
       const divRes = await fetch(
@@ -146,6 +142,51 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
     }
   };
 
+  const fetchSubjects = async () => {
+    if (!token) return;
+    if (!selectedDept) {
+      try {
+        const subRes = await fetch(
+          process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/subjects/",
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (subRes.ok) {
+          const data = await subRes.json();
+          setSubjects(data.results || data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch all subjects:", err);
+      }
+      return;
+    }
+
+    try {
+      let url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/subject-from-dept/?department=${selectedDept}`;
+      if (selectedYear) {
+        url += `&year=${selectedYear}`;
+      }
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const results = data.results || data;
+        const list: Subject[] = [];
+        results.forEach((item: any) => {
+          if (item.subject_details) {
+            list.push(...item.subject_details);
+          }
+        });
+        const unique = list.filter(
+          (sub, idx, self) => self.findIndex((s) => s.id === sub.id) === idx
+        );
+        setSubjects(unique);
+      }
+    } catch (err) {
+      console.error("Failed to fetch mapped subjects:", err);
+    }
+  };
+
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
@@ -153,7 +194,7 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
       if (selectedSubject) url += `class=${selectedSubject}&`;
       if (selectedDivision) url += `batch=${selectedDivision}&`;
       if (selectedDept) url += `department=${selectedDept}&`;
-      if (selectedProgram) url += `program=${encodeURIComponent(selectedProgram)}&`;
+      if (selectedYear) url += `year=${selectedYear}&`;
       if (search) url += `search_student=${encodeURIComponent(search)}&`;
       if (threshold) url += `threshold_percentage=${threshold}&`;
 
@@ -194,6 +235,8 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
             value={selectedDept}
             onChange={(e) => {
               setSelectedDept(e.target.value);
+              setSelectedYear("");
+              setSelectedSubject("");
               setSelectedDivision("");
             }}
           >
@@ -208,13 +251,24 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">
-            Program
+            Year
           </label>
-          <Input
-            placeholder="e.g. B.E. CSE"
-            value={selectedProgram}
-            onChange={(e) => setSelectedProgram(e.target.value)}
-          />
+          <select
+            className="w-full p-2.5 border rounded-md bg-card border-border text-foreground"
+            value={selectedYear}
+            onChange={(e) => {
+              setSelectedYear(e.target.value);
+              setSelectedSubject("");
+              setSelectedDivision("");
+            }}
+            disabled={!selectedDept}
+          >
+            <option value="">All Years</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
         </div>
 
         <div>
@@ -237,22 +291,24 @@ export function AnalyticsPage({ token }: AnalyticsPageProps) {
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">
-            Division / Batch
+            Division
           </label>
           <select
             className="w-full p-2.5 border rounded-md bg-card border-border text-foreground"
             value={selectedDivision}
             onChange={(e) => setSelectedDivision(e.target.value)}
+            disabled={!selectedYear}
           >
             <option value="">All Divisions</option>
             {divisions
               .filter((div) => {
-                if (!selectedDept) return true;
-                return String(div.department) === selectedDept;
+                const matchDept = !selectedDept || String(div.department) === selectedDept;
+                const matchYear = !selectedYear || String(div.year) === selectedYear;
+                return matchDept && matchYear;
               })
               .map((div) => (
                 <option key={div.id} value={div.id}>
-                  {div.year}th Year - Division {div.name}
+                  {div.name}
                 </option>
               ))}
           </select>

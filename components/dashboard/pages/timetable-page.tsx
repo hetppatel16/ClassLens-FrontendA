@@ -44,7 +44,7 @@ interface Department {
   name: string;
 }
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function TimetablePage({ token }: { token: string | null }) {
   const [loading, setLoading] = useState(true);
@@ -58,18 +58,20 @@ export function TimetablePage({ token }: { token: string | null }) {
   // Selected Specification Filters
   const [selectedDept, setSelectedDept] = useState("");
   const [selectedProgram, setSelectedProgram] = useState("B.E. CSE");
-  const [selectedYear, setSelectedYear] = useState("1");
-  const [selectedSem, setSelectedSem] = useState("1");
+  const [selectedYear, setSelectedYear] = useState("");
+  const [selectedSem, setSelectedSem] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("");
 
   // Subjects & existing timetable for the selected specification
   const [specSubjects, setSpecSubjects] = useState<Subject[]>([]);
   const [timetableSlots, setTimetableSlots] = useState<Record<number, Array<{ subject: string; default_teacher: string }>>>({
-    0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
+    0: [], 1: [], 2: [], 3: [], 4: [], 5: []
   });
 
   const [formError, setFormError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [subjectTeachers, setSubjectTeachers] = useState<Record<string, Teacher[]>>({});
+  const [loadingSubjectTeachers, setLoadingSubjectTeachers] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!token) return;
@@ -79,7 +81,8 @@ export function TimetablePage({ token }: { token: string | null }) {
   // Fetch subjects and templates when spec changes
   useEffect(() => {
     if (selectedDept && selectedYear && selectedSem) {
-      fetchSubjectsForSpec(selectedDept, selectedYear, selectedSem);
+      const absoluteSem = (Number(selectedYear) - 1) * 2 + Number(selectedSem);
+      fetchSubjectsForSpec(selectedDept, selectedYear, String(absoluteSem));
     } else {
       setSpecSubjects([]);
     }
@@ -87,7 +90,8 @@ export function TimetablePage({ token }: { token: string | null }) {
 
   useEffect(() => {
     if (selectedDivision && selectedDept && selectedYear && selectedSem) {
-      fetchTimetableForSpec(selectedDivision, selectedDept, selectedYear, selectedSem);
+      const absoluteSem = (Number(selectedYear) - 1) * 2 + Number(selectedSem);
+      fetchTimetableForSpec(selectedDivision, selectedDept, selectedYear, String(absoluteSem));
     } else {
       resetGrid();
     }
@@ -95,9 +99,43 @@ export function TimetablePage({ token }: { token: string | null }) {
 
   const resetGrid = () => {
     setTimetableSlots({
-      0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
+      0: [], 1: [], 2: [], 3: [], 4: [], 5: []
     });
   };
+
+  const fetchTeachersForSubject = async (subjectId: string) => {
+    if (!subjectId || subjectTeachers[subjectId] || loadingSubjectTeachers[subjectId] || !token) return;
+
+    setLoadingSubjectTeachers((prev) => ({ ...prev, [subjectId]: true }));
+    try {
+      const divisionParam = selectedDivision ? `&division=${selectedDivision}` : "";
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/teacher-subjects/?subject=${subjectId}${divisionParam}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.results || data;
+        const list = results.map((item: any) => ({
+          id: item.teacher_id,
+          name: item.teacher_name,
+        }));
+        // Deduplicate
+        const unique = list.filter(
+          (t: any, idx: number, self: any[]) => self.findIndex((s) => s.id === t.id) === idx
+        );
+        setSubjectTeachers((prev) => ({ ...prev, [subjectId]: unique }));
+      }
+    } catch (err) {
+      console.error("Error fetching teachers for subject:", err);
+    } finally {
+      setLoadingSubjectTeachers((prev) => ({ ...prev, [subjectId]: false }));
+    }
+  };
+
+  useEffect(() => {
+    setSubjectTeachers({});
+  }, [selectedDivision]);
 
   const fetchOptions = async () => {
     setLoading(true);
@@ -163,11 +201,11 @@ export function TimetablePage({ token }: { token: string | null }) {
         const data = await res.json();
         const templates: TimetableTemplate[] = data.results || data;
         const grouped: Record<number, Array<{ subject: string; default_teacher: string }>> = {
-          0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
+          0: [], 1: [], 2: [], 3: [], 4: [], 5: []
         };
         templates.forEach((t) => {
           const day = t.day_of_week;
-          if (day >= 0 && day <= 6) {
+          if (day >= 0 && day <= 5) {
             grouped[day].push({
               subject: String(t.subject),
               default_teacher: String(t.default_teacher),
@@ -175,6 +213,12 @@ export function TimetablePage({ token }: { token: string | null }) {
           }
         });
         setTimetableSlots(grouped);
+
+        // Pre-fetch teachers for all subjects loaded in the timetable templates
+        const subjectIds = Array.from(new Set(templates.map((t) => String(t.subject))));
+        subjectIds.forEach((subId) => {
+          if (subId) fetchTeachersForSubject(subId);
+        });
       }
     } catch (err) {
       console.error("Failed to fetch timetable:", err);
@@ -203,7 +247,14 @@ export function TimetablePage({ token }: { token: string | null }) {
   const updateSlot = (day: number, index: number, field: "subject" | "default_teacher", value: string) => {
     setTimetableSlots((prev) => {
       const updated = [...prev[day]];
-      updated[index] = { ...updated[index], [field]: value };
+      if (field === "subject") {
+        updated[index] = { ...updated[index], [field]: value, default_teacher: "" };
+        if (value) {
+          fetchTeachersForSubject(value);
+        }
+      } else {
+        updated[index] = { ...updated[index], [field]: value };
+      }
       return { ...prev, [day]: updated };
     });
   };
@@ -242,6 +293,7 @@ export function TimetablePage({ token }: { token: string | null }) {
 
     setSaving(true);
     try {
+      const absoluteSem = (Number(selectedYear) - 1) * 2 + Number(selectedSem);
       const response = await fetch(
         process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/timetable-templates/bulk-save/",
         {
@@ -255,7 +307,7 @@ export function TimetablePage({ token }: { token: string | null }) {
             program: selectedProgram,
             year: Number(selectedYear),
             division: Number(selectedDivision),
-            semester: Number(selectedSem),
+            semester: absoluteSem,
             slots: slotsPayload,
           }),
         }
@@ -295,7 +347,7 @@ export function TimetablePage({ token }: { token: string | null }) {
       {/* Selectors Card */}
       <Card className="p-6 shadow-md border-border bg-card">
         <h2 className="text-lg font-semibold text-foreground mb-4">Select Specification</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-muted-foreground mb-1">Department</label>
             <select
@@ -303,6 +355,8 @@ export function TimetablePage({ token }: { token: string | null }) {
               value={selectedDept}
               onChange={(e) => {
                 setSelectedDept(e.target.value);
+                setSelectedYear("");
+                setSelectedSem("");
                 setSelectedDivision("");
               }}
             >
@@ -316,28 +370,22 @@ export function TimetablePage({ token }: { token: string | null }) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-muted-foreground mb-1">Program</label>
-            <Input
-              placeholder="e.g. B.E. CSE"
-              value={selectedProgram}
-              onChange={(e) => setSelectedProgram(e.target.value)}
-            />
-          </div>
-
-          <div>
             <label className="block text-sm font-medium text-muted-foreground mb-1">Year</label>
             <select
               className="w-full p-2 border rounded-md bg-background text-foreground"
               value={selectedYear}
               onChange={(e) => {
                 setSelectedYear(e.target.value);
+                setSelectedSem("");
                 setSelectedDivision("");
               }}
+              disabled={!selectedDept}
             >
-              <option value="1">1st Year (Sem 1-2)</option>
-              <option value="2">2nd Year (Sem 3-4)</option>
-              <option value="3">3rd Year (Sem 5-6)</option>
-              <option value="4">4th Year (Sem 7-8)</option>
+              <option value="">— Select Year —</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
             </select>
           </div>
 
@@ -346,13 +394,15 @@ export function TimetablePage({ token }: { token: string | null }) {
             <select
               className="w-full p-2 border rounded-md bg-background text-foreground"
               value={selectedSem}
-              onChange={(e) => setSelectedSem(e.target.value)}
+              onChange={(e) => {
+                setSelectedSem(e.target.value);
+                setSelectedDivision("");
+              }}
+              disabled={!selectedYear}
             >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                <option key={s} value={s}>
-                  Semester {s}
-                </option>
-              ))}
+              <option value="">— Select Semester —</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
             </select>
           </div>
 
@@ -362,12 +412,12 @@ export function TimetablePage({ token }: { token: string | null }) {
               className="w-full p-2 border rounded-md bg-background text-foreground"
               value={selectedDivision}
               onChange={(e) => setSelectedDivision(e.target.value)}
-              disabled={!selectedDept}
+              disabled={!selectedSem}
             >
               <option value="">— Select Division —</option>
               {filteredDivisions.map((div) => (
                 <option key={div.id} value={div.id}>
-                  Div {div.name}
+                  {div.name}
                 </option>
               ))}
             </select>
@@ -427,11 +477,43 @@ export function TimetablePage({ token }: { token: string | null }) {
                                   onChange={(e) => updateSlot(dayIndex, index, "default_teacher", e.target.value)}
                                 >
                                   <option value="">— Select Teacher —</option>
-                                  {teachers.map((t) => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.name}
-                                    </option>
-                                  ))}
+                                  {(() => {
+                                    const available = subjectTeachers[slot.subject] || [];
+                                    const isLoading = loadingSubjectTeachers[slot.subject];
+                                    if (isLoading) {
+                                      return <option disabled>Loading teachers...</option>;
+                                    }
+                                    if (!slot.subject) {
+                                      return <option disabled>Select subject first</option>;
+                                    }
+                                    if (available.length === 0) {
+                                      const currentTeacherName = teachers.find(t => String(t.id) === slot.default_teacher)?.name || "Unknown Teacher";
+                                      return (
+                                        <>
+                                          <option disabled>No teachers mapped to this subject</option>
+                                          {slot.default_teacher && (
+                                            <option value={slot.default_teacher}>{currentTeacherName}</option>
+                                          )}
+                                        </>
+                                      );
+                                    }
+                                    const hasCurrent = available.some(t => String(t.id) === slot.default_teacher);
+                                    const currentTeacherName = !hasCurrent && slot.default_teacher 
+                                      ? (teachers.find(t => String(t.id) === slot.default_teacher)?.name || "Current Teacher")
+                                      : null;
+                                    return (
+                                      <>
+                                        {available.map((t) => (
+                                          <option key={t.id} value={t.id}>
+                                            {t.name}
+                                          </option>
+                                        ))}
+                                        {currentTeacherName && slot.default_teacher && (
+                                          <option value={slot.default_teacher}>{currentTeacherName} (Unmapped)</option>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </select>
                               </div>
                               <Button
@@ -499,7 +581,7 @@ export function TimetablePage({ token }: { token: string | null }) {
           <AlertCircle className="w-12 h-12 text-muted-foreground/60 mx-auto mb-3" />
           <h3 className="text-lg font-semibold text-foreground">Select Specification</h3>
           <p className="text-muted-foreground mt-1 max-w-md mx-auto">
-            Please choose a department, program, year, semester, and division to load and manage the weekly timetable.
+            Please choose a department, year, semester, and division to load and manage the weekly timetable.
           </p>
         </Card>
       )}

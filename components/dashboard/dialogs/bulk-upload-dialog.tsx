@@ -53,8 +53,8 @@ export function BulkUploadDialog({
       ],
     },
     students: {
-      headers: ["prn", "full_name", "email_id"],
-      exampleRow: [2021001, "Alice Johnson", "alice@example.com"],
+      headers: ["prn", "name", "email", "year", "department_name"],
+      exampleRow: [2021001, "Alice Johnson", "alice@example.com", 2, "Computer Science"],
     },
     subjects: {
       headers: ["paper_code", "paper_name", "msuis_id"],

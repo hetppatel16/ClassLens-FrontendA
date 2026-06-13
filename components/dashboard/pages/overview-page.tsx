@@ -123,7 +123,7 @@ export function OverviewPage({ token }: OverviewPageProps) {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground">Overview</h1>
         <p className="text-muted-foreground mt-1">
-          Welcome to ClessLens Admin Panel
+          Welcome to ClassLens Admin Panel
         </p>
       </div>
 

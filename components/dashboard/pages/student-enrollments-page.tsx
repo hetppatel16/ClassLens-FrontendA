@@ -33,24 +33,24 @@ const fetchAllPages = async (url: string, token: string) => {
 
   while (nextUrl && safetyCounter < 500) {
     safetyCounter += 1;
-    const response = await fetch(nextUrl, {
+    const res: Response = await fetch(nextUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!response.ok) {
-      throw new Error(`Fetch failed: ${response.status}`);
+    if (!res.ok) {
+      throw new Error(`Fetch failed: ${res.status}`);
     }
 
-    const json = await response.json();
-    const list = Array.isArray(json)
-      ? json
-      : json.results ?? json.data ?? json.items ?? [];
+    const dataVal: any = await res.json();
+    const list = Array.isArray(dataVal)
+      ? dataVal
+      : dataVal.results ?? dataVal.data ?? dataVal.items ?? [];
     rows.push(...(list || []));
 
-    if (Array.isArray(json)) {
+    if (Array.isArray(dataVal)) {
       nextUrl = null;
     } else {
-      nextUrl = typeof json.next === "string" ? json.next : null;
+      nextUrl = typeof dataVal.next === "string" ? dataVal.next : null;
     }
   }
 

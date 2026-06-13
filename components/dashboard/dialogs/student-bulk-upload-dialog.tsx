@@ -32,7 +32,7 @@ export function StudentBulkUploadDialog({
   const [divisions, setDivisions] = useState<Division[]>([]);
 
   const [selectedDept, setSelectedDept] = useState("");
-  const [program, setProgram] = useState("");
+  const [selectedYear, setSelectedYear] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("");
 
   const [file, setFile] = useState<File | null>(null);
@@ -69,10 +69,11 @@ export function StudentBulkUploadDialog({
     }
   };
 
-  // Filter divisions to only those belonging to the selected department
+  // Filter divisions to only those belonging to the selected department and year
   const filteredDivisions = divisions.filter((div) => {
-    if (!selectedDept) return true;
-    return String(div.department) === selectedDept;
+    const matchDept = !selectedDept || String(div.department) === selectedDept;
+    const matchYear = !selectedYear || String(div.year) === selectedYear;
+    return matchDept && matchYear;
   });
 
   const handleDrag = (e: React.DragEvent) => {
@@ -117,8 +118,8 @@ export function StudentBulkUploadDialog({
     setError("");
     setSuccess("");
 
-    if (!selectedDept || !selectedDivision || !program) {
-      setError("Please select Department, Program, and Division first.");
+    if (!selectedDept || !selectedDivision || !selectedYear) {
+      setError("Please select Department, Year, and Division first.");
       return;
     }
     if (!file) {
@@ -132,7 +133,7 @@ export function StudentBulkUploadDialog({
       formData.append("file", file);
       formData.append("department", selectedDept);
       formData.append("division", selectedDivision);
-      formData.append("program", program);
+      formData.append("program", "");
 
       const endpoint = process.env.NEXT_PUBLIC_BACKEND_URL + "/api/students/bulk-upload/";
       const res = await fetch(endpoint, {
@@ -159,8 +160,26 @@ export function StudentBulkUploadDialog({
     }
   };
 
+  const downloadCsvTemplate = () => {
+    const headers = ["prn", "name", "email"];
+    const example = [2021001, "Alice Johnson", "alice@example.com"];
+    const csv = [headers.join(","), example.join(",")].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "student_upload_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   // Step check to reveal the drop zone
-  const stepCompleted = selectedDept !== "" && program !== "" && selectedDivision !== "";
+  const stepCompleted =
+    selectedDept !== "" &&
+    selectedYear !== "" &&
+    selectedDivision !== "";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -172,12 +191,25 @@ export function StudentBulkUploadDialog({
           <X className="w-5 h-5" />
         </button>
 
-        <h2 className="text-xl font-semibold text-foreground mb-1">
-          Student Bulk Upload Wizard
-        </h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Step-by-step student bulk registration
-        </p>
+        <div className="flex justify-between items-start mb-6 mr-6">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground mb-0.5">
+              Student Bulk Upload Wizard
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Step-by-step student bulk registration
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadCsvTemplate}
+            className="flex-shrink-0 animate-fade-in"
+          >
+            Download Template
+          </Button>
+        </div>
 
         <form onSubmit={handleUpload} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -205,14 +237,23 @@ export function StudentBulkUploadDialog({
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-1">
-                Program *
+                Year *
               </label>
-              <Input
-                placeholder="e.g. B.Tech"
-                value={program}
-                onChange={(e) => setProgram(e.target.value)}
+              <select
+                className="w-full p-2 border rounded bg-card border-border text-foreground"
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  setSelectedDivision(""); // reset division if year changes
+                }}
                 required
-              />
+              >
+                <option value="">— Select —</option>
+                <option value="1">1st Year</option>
+                <option value="2">2nd Year</option>
+                <option value="3">3rd Year</option>
+                <option value="4">4th Year</option>
+              </select>
             </div>
 
             <div>
@@ -224,14 +265,18 @@ export function StudentBulkUploadDialog({
                 value={selectedDivision}
                 onChange={(e) => setSelectedDivision(e.target.value)}
                 required
-                disabled={!selectedDept}
+                disabled={!selectedDept || !selectedYear}
               >
                 <option value="">— Select —</option>
-                {filteredDivisions.map((div) => (
-                  <option key={div.id} value={div.id}>
-                    {div.year}th Year - Div {div.name}
-                  </option>
-                ))}
+                {filteredDivisions.length === 0 ? (
+                  <option value="" disabled>No divisions found</option>
+                ) : (
+                  filteredDivisions.map((div) => (
+                    <option key={div.id} value={div.id}>
+                      Div {div.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>

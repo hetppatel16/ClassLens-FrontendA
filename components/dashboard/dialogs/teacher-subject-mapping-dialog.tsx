@@ -43,14 +43,15 @@ export function TeacherSubjectMappingDialog({
   useEffect(() => {
     if (!teacher || !token) return;
     fetchMappingDetails();
-  }, [teacher, token]);
+  }, [teacher, token, selectedDivision]);
 
   const fetchMappingDetails = async () => {
     setLoading(true);
     setError("");
     try {
+      const divisionParam = selectedDivision ? `&division_id=${selectedDivision}` : "";
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/teacher-subjects/mapping-details/?teacher_id=${teacher?.id}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/teacher-subjects/mapping-details/?teacher_id=${teacher?.id}${divisionParam}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (response.ok) {
