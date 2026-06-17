@@ -62,6 +62,29 @@ export function TimetablePage({ token }: { token: string | null }) {
   const [selectedSem, setSelectedSem] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("");
 
+  useEffect(() => {
+    if (!selectedDept) return;
+    const currentDept = departments.find((d) => String(d.id) === selectedDept);
+    if (currentDept) {
+      const deptName = currentDept.name.toLowerCase();
+      if (deptName.includes("mca") || deptName.includes("master in computer applications")) {
+        setSelectedProgram("MCA");
+      } else if (deptName.includes("computer") || deptName.includes("cse")) {
+        setSelectedProgram("B.E. CSE");
+      } else if (deptName.includes("electronics") || deptName.includes("extc")) {
+        setSelectedProgram("B.E. EXTC");
+      } else if (deptName.includes("mechanical")) {
+        setSelectedProgram("B.E. Mech");
+      } else if (deptName.includes("civil")) {
+        setSelectedProgram("B.E. Civil");
+      } else if (deptName.includes("information technology") || deptName.includes("it")) {
+        setSelectedProgram("B.E. IT");
+      } else {
+        setSelectedProgram(currentDept.name);
+      }
+    }
+  }, [selectedDept, departments]);
+
   // Subjects & existing timetable for the selected specification
   const [specSubjects, setSpecSubjects] = useState<Subject[]>([]);
   const [timetableSlots, setTimetableSlots] = useState<Record<number, Array<{ subject: string; default_teacher: string }>>>({

@@ -69,6 +69,53 @@ export function StudentBulkUploadDialog({
     }
   };
 
+  const getProgramFromDept = (deptId: string) => {
+    const dept = departments.find(d => String(d.id) === deptId);
+    if (!dept) return "";
+    const name = dept.name.toLowerCase();
+    if (name.includes("mca") || name.includes("master in computer applications")) {
+      return "MCA";
+    }
+    if (name.includes("computer") || name.includes("cse")) {
+      return "B.E. CSE";
+    }
+    if (name.includes("electronics") || name.includes("extc")) {
+      return "B.E. EXTC";
+    }
+    if (name.includes("mechanical")) {
+      return "B.E. Mech";
+    }
+    if (name.includes("civil")) {
+      return "B.E. Civil";
+    }
+    if (name.includes("information technology") || name.includes("it")) {
+      return "B.E. IT";
+    }
+    return dept.name;
+  };
+
+  const getMaxYears = () => {
+    const dept = departments.find(d => String(d.id) === selectedDept);
+    if (!dept) return 4;
+    const name = dept.name.toLowerCase();
+    if (name.includes("mca") || name.includes("master") || name.includes("post") || name.includes("applied")) {
+      return 2;
+    }
+    if (name.includes("architecture")) {
+      return 5;
+    }
+    return 4;
+  };
+
+  useEffect(() => {
+    if (!selectedDept) return;
+    const maxYears = getMaxYears();
+    if (selectedYear && Number(selectedYear) > maxYears) {
+      setSelectedYear("");
+      setSelectedDivision("");
+    }
+  }, [selectedDept]);
+
   // Filter divisions to only those belonging to the selected department and year
   const filteredDivisions = divisions.filter((div) => {
     const matchDept = !selectedDept || String(div.department) === selectedDept;
@@ -133,7 +180,7 @@ export function StudentBulkUploadDialog({
       formData.append("file", file);
       formData.append("department", selectedDept);
       formData.append("division", selectedDivision);
-      formData.append("program", "");
+      formData.append("program", getProgramFromDept(selectedDept));
 
       const endpoint = process.env.NEXT_PUBLIC_BACKEND_URL + "/api/students/bulk-upload/";
       const res = await fetch(endpoint, {
@@ -249,10 +296,17 @@ export function StudentBulkUploadDialog({
                 required
               >
                 <option value="">— Select —</option>
-                <option value="1">1st Year</option>
-                <option value="2">2nd Year</option>
-                <option value="3">3rd Year</option>
-                <option value="4">4th Year</option>
+                {Array.from({ length: getMaxYears() }, (_, i) => i + 1).map((yr) => {
+                  let suffix = "th";
+                  if (yr === 1) suffix = "st";
+                  else if (yr === 2) suffix = "nd";
+                  else if (yr === 3) suffix = "rd";
+                  return (
+                    <option key={yr} value={String(yr)}>
+                      {yr}{suffix} Year
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
