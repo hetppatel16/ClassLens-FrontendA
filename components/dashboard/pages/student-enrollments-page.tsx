@@ -20,8 +20,46 @@ interface StudentEnrollment {
   subject_code: string;
 }
 
+interface SubjectItem {
+  id: number;
+  code: string;
+  name: string;
+}
+
+const fetchAllPages = async (url: string, token: string) => {
+  const rows: any[] = [];
+  let nextUrl: string | null = url;
+  let safetyCounter = 0;
+
+  while (nextUrl && safetyCounter < 500) {
+    safetyCounter += 1;
+    const res: Response = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Fetch failed: ${res.status}`);
+    }
+
+    const dataVal: any = await res.json();
+    const list = Array.isArray(dataVal)
+      ? dataVal
+      : dataVal.results ?? dataVal.data ?? dataVal.items ?? [];
+    rows.push(...(list || []));
+
+    if (Array.isArray(dataVal)) {
+      nextUrl = null;
+    } else {
+      nextUrl = typeof dataVal.next === "string" ? dataVal.next : null;
+    }
+  }
+
+  return rows;
+};
+
 export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
   const [enrollments, setEnrollments] = useState<StudentEnrollment[]>([]);
+  const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [editingEnrollment, setEditingEnrollment] =
@@ -29,43 +67,70 @@ export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
   const [showForm, setShowForm] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
-    fetchEnrollments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const fetchEnrollments = async () => {
+  const loadData = async () => {
     if (!token) return;
     setLoading(true);
 
     try {
-      const response = await fetch(
-        process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/student-enrollments/",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+      const [subjectRows, enrollmentRows] = await Promise.all([
+        fetchAllPages(`${baseUrl}/api/admin/subjects/?page=1`, token),
+        fetchAllPages(`${baseUrl}/api/admin/student-enrollments/?page=1`, token),
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
-        const normalized: StudentEnrollment[] = (data || []).map((e: any) => ({
-          id: e.id,
-          student_prn: e.student_prn,
-          subject: e.subject,
-          subject_name: e.subject_name,
-          subject_code: e.subject_code,
-        }));
-        setEnrollments(normalized);
-      } else {
-        console.error("Failed to fetch student enrollments:", response.status);
-      }
+      const subjectMap = new Map<number, SubjectItem>();
+      const normalizedSubjects: SubjectItem[] = subjectRows.map((x: any) => ({
+        id: Number(x.id ?? x.pk ?? x.subject_id ?? 0),
+        code: String(x.code ?? x.subject_code ?? x.paper_code ?? ""),
+        name: String(x.name ?? x.paper_name ?? x.title ?? ""),
+      }));
+
+      normalizedSubjects.forEach((s) => subjectMap.set(s.id, s));
+      setSubjects(normalizedSubjects);
+
+      const normalized: StudentEnrollment[] = enrollmentRows.map((e: any) => {
+        const subjectId = Number(
+          e.subject_id ?? e.subject ?? e.subject?.id ?? e.subject_pk ?? 0
+        );
+
+        const matchedSubject = subjectMap.get(subjectId);
+
+        const subjectCode =
+          e.subject_code ??
+          e.subject?.code ??
+          matchedSubject?.code ??
+          String(e.subject ?? e.subject_id ?? "");
+
+        const subjectName =
+          e.subject_name ??
+          e.subject?.name ??
+          matchedSubject?.name ??
+          "";
+
+        return {
+          id: Number(e.id ?? e.pk ?? e.enrollment_id ?? 0),
+          student_prn: Number(e.student_prn ?? e.prn ?? 0),
+          subject: subjectId,
+          subject_name: subjectName,
+          subject_code: subjectCode,
+        };
+      });
+
+      setEnrollments(normalized);
     } catch (err) {
       console.log("[v0] Student enrollments fetch error:", err);
+      setSubjects([]);
+      setEnrollments([]);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!token) return;
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const handleDelete = async (id: number) => {
     if (!token) return;
@@ -101,7 +166,7 @@ export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
   const handleFormClose = () => {
     setShowForm(false);
     setEditingEnrollment(null);
-    fetchEnrollments();
+    loadData();
   };
 
   // Search by PRN, subject name, or subject code
@@ -112,8 +177,9 @@ export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
     const prnMatch = String(e.student_prn).toLowerCase().includes(q);
     const subjectNameMatch = (e.subject_name ?? "").toLowerCase().includes(q);
     const subjectCodeMatch = (e.subject_code ?? "").toLowerCase().includes(q);
+    const subjectIdMatch = String(e.subject).toLowerCase().includes(q);
 
-    return prnMatch || subjectNameMatch || subjectCodeMatch;
+    return prnMatch || subjectNameMatch || subjectCodeMatch || subjectIdMatch;
   });
 
   return (
@@ -163,7 +229,7 @@ export function StudentEnrollmentsPage({ token }: StudentEnrollmentsPageProps) {
           type="student-enrollments"
           onClose={() => {
             setShowBulkUpload(false);
-            fetchEnrollments();
+            loadData();
           }}
         />
       )}

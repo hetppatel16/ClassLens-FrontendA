@@ -17,6 +17,7 @@ interface StudentFormProps {
     prn: string;
     year: number | string;
     department?: number | string | { id: number; name: string } | null;
+    division?: number | string | { id: number; name: string } | null;
   } | null;
   onClose: () => void;
 }
@@ -26,6 +27,14 @@ interface DepartmentItem {
   name: string;
 }
 
+interface DivisionItem {
+  id: number;
+  name: string;
+  department?: number | string | null;
+  year?: number | string | null;
+  semester?: number | string | null;
+}
+
 export function StudentForm({ token, student, onClose }: StudentFormProps) {
   const [formData, setFormData] = useState({
     name: "",
@@ -33,11 +42,14 @@ export function StudentForm({ token, student, onClose }: StudentFormProps) {
     prn: "",
     year: "",
     department: "" as string | number,
+    division: "" as string | number,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [divisions, setDivisions] = useState<DivisionItem[]>([]);
   const [deptsLoading, setDeptsLoading] = useState(false);
+  const [divisionsLoading, setDivisionsLoading] = useState(false);
 
   useEffect(() => {
     // prefill when editing
@@ -51,6 +63,10 @@ export function StudentForm({ token, student, onClose }: StudentFormProps) {
           typeof student.department === "object"
             ? (student.department as any).id ?? ""
             : ((student.department ?? "") as string | number),
+        division:
+          typeof student.division === "object"
+            ? (student.division as any).id ?? ""
+            : ((student.division ?? "") as string | number),
       });
     }
   }, [student]);
@@ -103,6 +119,83 @@ export function StudentForm({ token, student, onClose }: StudentFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    const fetchDivisions = async () => {
+      if (!token) return;
+      setDivisionsLoading(true);
+      try {
+        const res = await fetch(
+          process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/divisions/",
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!res.ok) {
+          console.warn("Failed to fetch divisions", res.status);
+          setDivisions([]);
+          return;
+        }
+
+        const data = await res.json();
+        const list = Array.isArray(data)
+          ? data
+          : data?.results ?? data?.data ?? data?.items ?? [];
+
+        const normalized: DivisionItem[] = (list || []).map((d: any) => ({
+          id: d.id ?? d.pk ?? d.division_id,
+          name: d.name ?? d.division_name ?? String(d),
+          department: d.department ?? d.department_id ?? "",
+          year: d.year ?? "",
+          semester: d.semester ?? "",
+        }));
+
+        setDivisions(normalized);
+      } catch (err) {
+        console.error("Failed to load divisions", err);
+        setDivisions([]);
+      } finally {
+        setDivisionsLoading(false);
+      }
+    };
+
+    fetchDivisions();
+  }, [token]);
+
+  const filteredDivisions = divisions.filter((d) => {
+    if (
+      formData.department !== "" &&
+      formData.department != null &&
+      String(d.department ?? "") !== String(formData.department)
+    ) {
+      return false;
+    }
+
+    if (
+      formData.year !== "" &&
+      formData.year != null &&
+      String(d.year ?? "") !== String(formData.year)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  useEffect(() => {
+    if (formData.division === "" || formData.division == null) return;
+    const currentId = String(formData.division);
+    const stillVisible = filteredDivisions.some((d) => String(d.id) === currentId);
+    if (!stillVisible) {
+      setFormData((prev) => ({ ...prev, division: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.department, formData.year, divisions]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -129,6 +222,12 @@ export function StudentForm({ token, student, onClose }: StudentFormProps) {
         payload.department = Number.isNaN(deptId)
           ? formData.department
           : deptId;
+      }
+      if (formData.division !== "" && formData.division != null) {
+        const divisionId = Number(formData.division);
+        payload.division = Number.isNaN(divisionId)
+          ? formData.division
+          : divisionId;
       }
 
       const response = await fetch(url, {
@@ -271,6 +370,32 @@ export function StudentForm({ token, student, onClose }: StudentFormProps) {
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Division
+            </label>
+            {divisionsLoading ? (
+              <Input value="Loading divisions..." disabled />
+            ) : (
+              <select
+                value={String(formData.division ?? "")}
+                onChange={(e) =>
+                  setFormData({ ...formData, division: e.target.value })
+                }
+                className="w-full p-2 border rounded"
+                required
+              >
+                <option value="">— Select division —</option>
+                {filteredDivisions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {d.semester ? ` (Sem ${d.semester})` : ""}
                   </option>
                 ))}
               </select>

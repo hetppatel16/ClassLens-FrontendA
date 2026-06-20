@@ -8,8 +8,12 @@ import { SubjectsPage } from "./pages/subjects-page"
 import { OverviewPage } from "./pages/overview-page"
 import { SubjectFromDeptPage } from "./pages/subject-from-dept-page"
 import { StudentEnrollmentsPage } from "./pages/student-enrollments-page"
+import { DivisionsPage } from "./pages/divisions-page"
 import { Button } from "@/components/ui/button"
 import { AdminUsersPage } from "./pages/admin-users-page"
+import { HolidaysPage } from "./pages/holidays-page"
+import { TimetablePage } from "./pages/timetable-page"
+import { AnalyticsPage } from "./pages/analytics-page"
 import { LogOut, Menu, X } from "lucide-react"
 
 interface DashboardProps {
@@ -17,7 +21,18 @@ interface DashboardProps {
   onLogout: () => void
 }
 
-type Page = "overview" | "teachers" | "students" | "subjects" | "subject-from-dept" | "student-enrollments" | "admin-users"
+type Page =
+  | "overview"
+  | "teachers"
+  | "students"
+  | "divisions"
+  | "subjects"
+  | "subject-from-dept"
+  | "student-enrollments"
+  | "admin-users"
+  | "holidays"
+  | "timetable"
+  | "analytics"
 
 export function Dashboard({ adminToken, onLogout }: DashboardProps) {
   const [currentPage, setCurrentPage] = useState<Page>("overview")
@@ -33,12 +48,20 @@ export function Dashboard({ adminToken, onLogout }: DashboardProps) {
         return <AdminUsersPage token={adminToken} />
       case "students":
         return <StudentsPage token={adminToken} />
+      case "divisions":
+        return <DivisionsPage token={adminToken} />
       case "subjects":
         return <SubjectsPage token={adminToken} />
       case "subject-from-dept":
         return <SubjectFromDeptPage token={adminToken} />
       case "student-enrollments":
         return <StudentEnrollmentsPage token={adminToken} />
+      case "holidays":
+        return <HolidaysPage token={adminToken} />
+      case "timetable":
+        return <TimetablePage token={adminToken} />
+      case "analytics":
+        return <AnalyticsPage token={adminToken} />
       default:
         return <OverviewPage token={adminToken} />
     }

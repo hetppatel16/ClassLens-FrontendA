@@ -17,6 +17,26 @@ interface AdminUser {
   is_active: boolean;
 }
 
+const normalizeAdminUsers = (payload: unknown): AdminUser[] => {
+  const container = payload as {
+    results?: unknown;
+    data?: unknown;
+    items?: unknown;
+  };
+
+  const list = Array.isArray(payload)
+    ? payload
+    : container.results ?? container.data ?? container.items ?? [];
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map((item: any) => ({
+    id: String(item.id ?? item.pk ?? item.admin_user_id ?? ""),
+    username: String(item.username ?? item.name ?? ""),
+    is_active: Boolean(item.is_active ?? item.active ?? true),
+  }));
+};
+
 export function AdminUsersPage({ token }: AdminUsersPageProps) {
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +64,7 @@ export function AdminUsersPage({ token }: AdminUsersPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setAdmins(data);
+        setAdmins(normalizeAdminUsers(data));
       }
     } catch (err) {
       console.log("[v0] Admins fetch error:", err);
@@ -66,7 +86,7 @@ export function AdminUsersPage({ token }: AdminUsersPageProps) {
       );
 
       if (response.ok) {
-        setAdmins(admins.filter((a) => a.id !== id));
+        setAdmins((prev) => prev.filter((a) => a.id !== id));
       }
     } catch (err) {
       console.log("[v0] Delete error:", err);

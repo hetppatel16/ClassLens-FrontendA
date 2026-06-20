@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Users, BookOpen, Award } from "lucide-react";
 
 interface OverviewPageProps {
@@ -17,6 +18,9 @@ interface Stats {
 export function OverviewPage({ token }: OverviewPageProps) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncSuccess, setSyncSuccess] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -46,6 +50,53 @@ export function OverviewPage({ token }: OverviewPageProps) {
     fetchStats();
   }, [token]);
 
+  const handleSync = async () => {
+    if (!token) return;
+    setSyncError("");
+    setSyncSuccess("");
+    setSyncLoading(true);
+
+    try {
+      const response = await fetch(
+        process.env.NEXT_PUBLIC_BACKEND_URL + "/api/admin/sync/staging/",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
+
+      if (!response.ok) {
+        const message =
+          (data && (data.detail || data.error || data.message)) ||
+          (typeof data === "string" ? data : "Sync failed");
+        setSyncError(String(message));
+        return;
+      }
+
+      const message =
+        (data && (data.message || data.detail || data.status)) ||
+        "Sync completed successfully";
+      setSyncSuccess(String(message));
+    } catch (err) {
+      console.log("[v0] Sync error:", err);
+      setSyncError("Network error while running sync");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const statCards = [
     {
       title: "Teachers",
@@ -72,7 +123,7 @@ export function OverviewPage({ token }: OverviewPageProps) {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground">Overview</h1>
         <p className="text-muted-foreground mt-1">
-          Welcome to ClessLens Admin Panel
+          Welcome to ClassLens Admin Panel
         </p>
       </div>
 
@@ -103,10 +154,29 @@ export function OverviewPage({ token }: OverviewPageProps) {
         <h2 className="text-lg font-semibold text-foreground mb-4">
           Quick Actions
         </h2>
-        <p className="text-muted-foreground">
-          Use the sidebar to navigate to Teachers, Students, or Subjects
-          sections to manage your institution&apos;s data.
-        </p>
+        <div className="flex flex-col gap-4">
+          <p className="text-muted-foreground">
+            Use the sidebar to manage teachers, students, subjects, and
+            enrollments. Run a sync after bulk uploads to move staging data into
+            the live tables.
+          </p>
+          <div className="flex items-center gap-3">
+            <Button onClick={handleSync} disabled={syncLoading || !token}>
+              {syncLoading ? "Syncing..." : "Sync Staging Data"}
+            </Button>
+            {!token && (
+              <span className="text-xs text-muted-foreground">
+                Login required
+              </span>
+            )}
+          </div>
+          {syncError && (
+            <div className="text-sm text-destructive">{syncError}</div>
+          )}
+          {syncSuccess && (
+            <div className="text-sm text-green-600">{syncSuccess}</div>
+          )}
+        </div>
       </Card>
     </div>
   );

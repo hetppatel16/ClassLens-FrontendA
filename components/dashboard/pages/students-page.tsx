@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Pencil, Trash2, Upload } from "lucide-react";
 import { StudentForm } from "../forms/student-form";
-import { BulkUploadDialog } from "../dialogs/bulk-upload-dialog";
+import { StudentBulkUploadDialog } from "../dialogs/student-bulk-upload-dialog";
 
 interface StudentsPageProps {
   token: string | null;
@@ -14,12 +14,17 @@ interface StudentsPageProps {
 
 interface Student {
   id: string;
+  apiId?: string;
   name: string;
   email: string;
   prn: string;
   year: number | string;
   department?: number | string | null;
   department_name?: string | null;
+  division?: number | string | null;
+  division_name?: string | null;
+  semester?: number | string | null;
+  source: "live" | "staging";
 }
 
 interface DepartmentItem {
@@ -38,19 +43,90 @@ export function StudentsPage({ token }: StudentsPageProps) {
   const [showForm, setShowForm] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
 
-  // pagination
+  // client-side pagination over full loaded dataset
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const pageSize = 25; // should match StudentPagination.page_size on backend
+  const pageSize = 25;
 
-  const totalPages = totalCount > 0 ? Math.ceil(totalCount / pageSize) : 1;
+  const fetchAllPages = async (url: string, tokenValue: string) => {
+    const rows: any[] = [];
+    let nextUrl: string | null = url;
+    let safetyCounter = 0;
 
-  // fetch students whenever token or page changes
+    while (nextUrl && safetyCounter < 500) {
+      safetyCounter += 1;
+
+      const res: Response = await fetch(nextUrl, {
+        headers: { Authorization: `Bearer ${tokenValue}` },
+      });
+
+      if (!res.ok) {
+        throw new Error(`Fetch failed: ${res.status}`);
+      }
+
+      const dataVal: any = await res.json();
+      const list = Array.isArray(dataVal)
+        ? dataVal
+        : dataVal.results ?? dataVal.data ?? dataVal.items ?? [];
+      rows.push(...(list || []));
+
+      if (Array.isArray(dataVal)) {
+        nextUrl = null;
+      } else {
+        nextUrl = typeof dataVal.next === "string" ? dataVal.next : null;
+      }
+    }
+
+    return rows;
+  };
+
+  const normalizeLiveStudent = (s: any): Student => ({
+    id: String(s.id ?? s.pk ?? s.student_id ?? ""),
+    apiId: String(s.id ?? s.pk ?? s.student_id ?? ""),
+    name: s.name ?? s.full_name ?? "",
+    email: s.email ?? s.email_id ?? "",
+    prn: String(s.prn ?? s.roll_number ?? s.roll_no ?? ""),
+    year: s.year ?? s.class ?? s.year_of ?? "",
+    department: s.department ?? s.department_id ?? "",
+    department_name:
+      s.department_name ??
+      s.department?.name ??
+      (typeof s.department === "string" ? s.department : ""),
+    division: s.division ?? s.division_id ?? "",
+    division_name:
+      s.division_name ??
+      s.division?.name ??
+      (typeof s.division === "string" ? s.division : ""),
+    semester: s.semester ?? s.division?.semester ?? "",
+    source: "live",
+  });
+
+  const normalizeStagingStudent = (s: any): Student => {
+    const raw = s.raw_payload && typeof s.raw_payload === "object" ? s.raw_payload : {};
+    return {
+      id: `staging-${String(s.id ?? s.pk ?? s.prn ?? "")}`,
+      apiId: String(s.id ?? s.pk ?? ""),
+      name: s.full_name ?? s.name ?? raw.full_name ?? raw.name ?? "",
+      email: s.email_id ?? s.email ?? raw.email_id ?? raw.email ?? "",
+      prn: String(s.prn ?? raw.prn ?? ""),
+      year: s.year ?? raw.year ?? raw.class ?? "",
+      department: s.department ?? s.department_id ?? raw.department_id ?? "",
+      department_name:
+        s.department_name ?? raw.department_name ?? raw.department ?? "",
+      division: s.division ?? s.division_id ?? raw.division_id ?? "",
+      division_name:
+        s.division_name ?? raw.division_name ?? raw.division ?? "",
+      semester: s.semester ?? raw.semester ?? "",
+      source: "staging",
+    };
+  };
+
+  // fetch all students whenever token changes
   useEffect(() => {
     if (!token) return;
-    fetchStudents(page);
+    fetchStudents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, page]);
+  }, [token]);
 
   // fetch departments once per token
   useEffect(() => {
@@ -59,45 +135,52 @@ export function StudentsPage({ token }: StudentsPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const fetchStudents = async (pageToLoad: number) => {
+  const fetchStudents = async () => {
     if (!token) return;
     setLoading(true);
 
     try {
-      const response = await fetch(
-        process.env.NEXT_PUBLIC_BACKEND_URL +
-          `/api/admin/students/?page=${pageToLoad}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const base = process.env.NEXT_PUBLIC_BACKEND_URL;
+      const [liveRows, stagingRows] = await Promise.all([
+        fetchAllPages(`${base}/api/admin/students/?page=1`, token),
+        fetchAllPages(`${base}/api/admin/api-students/?page=1`, token).catch(
+          () => []
+        ),
+      ]);
 
-      if (response.ok) {
-        const json = await response.json();
+      const byPrn = new Map<string, Student>();
 
-        // DRF pagination -> { count, results, next, previous }
-        const rawList = Array.isArray(json) ? json : json.results ?? [];
-        const countFromApi =
-          typeof json.count === "number" ? json.count : rawList.length;
-        setTotalCount(countFromApi);
-
-        const normalized: Student[] = rawList.map((s: any) => ({
-          id: String(s.id ?? s.pk ?? s.student_id ?? ""),
-          name: s.name ?? "",
-          email: s.email ?? "",
-          prn: String(s.prn ?? s.roll_number ?? s.roll_no ?? ""),
-          year: s.year ?? s.class ?? s.year_of ?? "",
-          department: s.department ?? s.department_id ?? "",
-          department_name:
-            s.department_name ??
-            s.department?.name ??
-            (typeof s.department === "string" ? s.department : ""),
-        }));
-
-        setStudents(normalized);
-      } else {
-        console.error("Failed to fetch students", response.status);
+      for (const row of liveRows || []) {
+        const normalized = normalizeLiveStudent(row);
+        const key = normalized.prn || normalized.id;
+        byPrn.set(key, normalized);
       }
+
+      for (const row of stagingRows || []) {
+        const normalized = normalizeStagingStudent(row);
+        const key = normalized.prn || normalized.id;
+        if (!byPrn.has(key)) {
+          byPrn.set(key, normalized);
+          continue;
+        }
+
+        // backfill missing live fields from staging raw/new_schema data
+        const existing = byPrn.get(key)!;
+        byPrn.set(key, {
+          ...existing,
+          name: existing.name || normalized.name,
+          email: existing.email || normalized.email,
+          year: existing.year || normalized.year,
+          department_name: existing.department_name || normalized.department_name,
+          division_name: existing.division_name || normalized.division_name,
+          semester: existing.semester || normalized.semester,
+        });
+      }
+
+      const merged = Array.from(byPrn.values());
+      setStudents(merged);
+      setTotalCount(merged.length);
+      setPage(1);
     } catch (err) {
       console.log("[v0] Students fetch error:", err);
     } finally {
@@ -145,6 +228,7 @@ export function StudentsPage({ token }: StudentsPageProps) {
 
       if (response.ok) {
         setStudents((prev) => prev.filter((s) => s.id !== id));
+        setTotalCount((prev) => Math.max(0, prev - 1));
         // optionally, you can refetch the current page:
         // fetchStudents(page)
       } else {
@@ -161,7 +245,7 @@ export function StudentsPage({ token }: StudentsPageProps) {
   const handleFormClose = () => {
     setShowForm(false);
     setEditingStudent(null);
-    fetchStudents(page);
+    fetchStudents();
   };
 
   const filteredStudents = students.filter((s) => {
@@ -196,11 +280,35 @@ export function StudentsPage({ token }: StudentsPageProps) {
         .toLowerCase()
         .includes(q);
       const deptNameMatch = (s.department_name ?? "").toLowerCase().includes(q);
-      return Boolean(nameMatch || emailMatch || prnMatch || deptNameMatch);
+      const divisionNameMatch = (s.division_name ?? "").toLowerCase().includes(q);
+
+      return Boolean(
+        nameMatch ||
+          emailMatch ||
+          prnMatch ||
+          deptNameMatch ||
+          divisionNameMatch
+      );
     }
 
     return true;
   });
+
+  const totalPages =
+    filteredStudents.length > 0
+      ? Math.ceil(filteredStudents.length / pageSize)
+      : 1;
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const pagedStudents = filteredStudents.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
 
   const handlePrev = () => {
     if (page > 1) setPage((p) => p - 1);
@@ -248,12 +356,11 @@ export function StudentsPage({ token }: StudentsPageProps) {
       )}
 
       {showBulkUpload && (
-        <BulkUploadDialog
+        <StudentBulkUploadDialog
           token={token}
-          type="students"
           onClose={() => {
             setShowBulkUpload(false);
-            fetchStudents(page);
+            fetchStudents();
           }}
         />
       )}
@@ -262,7 +369,7 @@ export function StudentsPage({ token }: StudentsPageProps) {
         <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3 flex-wrap">
             <Input
-              placeholder="Search by name, email, roll number or department..."
+              placeholder="Search by name, email, PRN, department, division..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="max-w-sm"
@@ -295,8 +402,7 @@ export function StudentsPage({ token }: StudentsPageProps) {
           </div>
 
           <div className="text-sm text-muted-foreground">
-            Page {page} of {totalPages} • Showing {filteredStudents.length} of{" "}
-            {totalCount} students
+            Page {page} of {totalPages} • Showing {pagedStudents.length} of {totalCount} students (live + staging)
           </div>
         </div>
 
@@ -304,47 +410,36 @@ export function StudentsPage({ token }: StudentsPageProps) {
           <table className="w-full">
             <thead className="border-b border-border">
               <tr>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Name
-                </th>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Email
-                </th>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Roll Number
-                </th>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Year
-                </th>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Department
-                </th>
-                <th className="text-right p-6 font-semibold text-foreground">
-                  Actions
-                </th>
+                <th className="text-left p-6 font-semibold text-foreground">Name</th>
+                <th className="text-left p-6 font-semibold text-foreground">Email</th>
+                <th className="text-left p-6 font-semibold text-foreground">Roll Number</th>
+                <th className="text-left p-6 font-semibold text-foreground">Year</th>
+                <th className="text-left p-6 font-semibold text-foreground">Department</th>
+                <th className="text-left p-6 font-semibold text-foreground">Division</th>
+                <th className="text-right p-6 font-semibold text-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td
-                    colSpan={6}
-                    className="p-6 text-center text-muted-foreground"
-                  >
+                      colSpan={7}
+                      className="p-6 text-center text-muted-foreground"
+                    >
                     Loading...
                   </td>
                 </tr>
-              ) : filteredStudents.length === 0 ? (
+              ) : pagedStudents.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
-                    className="p-6 text-center text-muted-foreground"
-                  >
+                      colSpan={7}
+                      className="p-6 text-center text-muted-foreground"
+                    >
                     No students found
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map((student) => (
+                pagedStudents.map((student) => (
                   <tr
                     key={student.id}
                     className="border-b border-border hover:bg-muted/50 transition"
@@ -363,12 +458,22 @@ export function StudentsPage({ token }: StudentsPageProps) {
                       {student.department_name ??
                         String(student.department ?? "-")}
                     </td>
+                    <td className="p-6 text-muted-foreground">
+                      {student.division_name ?? String(student.division ?? "-")}
+                    </td>
+                    {/* Semester and Source hidden in table */}
                     <td className="p-6">
                       <div className="flex justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
+                            if (student.source === "staging") {
+                              alert(
+                                "This row is from staging (new_schema). Promote/sync to live students before editing."
+                              );
+                              return;
+                            }
                             setEditingStudent(student);
                             setShowForm(true);
                           }}
@@ -379,7 +484,15 @@ export function StudentsPage({ token }: StudentsPageProps) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDelete(student.id)}
+                          onClick={() => {
+                            if (student.source === "staging") {
+                              alert(
+                                "Staging rows are managed from sync flow. Delete from staging endpoint if needed."
+                              );
+                              return;
+                            }
+                            handleDelete(student.id);
+                          }}
                           className="text-destructive"
                         >
                           <Trash2 className="w-4 h-4" />

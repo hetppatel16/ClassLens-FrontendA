@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import * as XLSX from "xlsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle, X } from "lucide-react";
@@ -52,36 +53,20 @@ export function BulkUploadDialog({
       ],
     },
     students: {
-      headers: [
-        "prn",
-        "name",
-        "email",
-        "password",
-        "year",
-        "department_name",
-        "phone",
-      ],
-      exampleRow: [
-        2021001,
-        "Alice Johnson",
-        "alice@example.com",
-        "student123",
-        2,
-        "Computer Science",
-        "9876543210",
-      ],
+      headers: ["prn", "name", "email", "year", "department_name"],
+      exampleRow: [2021001, "Alice Johnson", "alice@example.com", 2, "Computer Science"],
     },
     subjects: {
-      headers: ["code", "name"],
-      exampleRow: ["CS101", "Data Structures"],
+      headers: ["paper_code", "paper_name", "msuis_id"],
+      exampleRow: ["CS101", "Data Structures", 10101],
     },
     "subject-from-dept": {
       headers: ["department_name", "year", "semester", "subject_codes"],
       exampleRow: ["Computer Science", 2, 3, "CS201,CS202"],
     },
     "student-enrollments": {
-      headers: ["student_prn", "subject_code"],
-      exampleRow: [2021001, "CS201"],
+      headers: ["prn", "subject_code", "division", "year"],
+      exampleRow: [2021001, "CS201", "SFI", 2],
     },
   };
 
@@ -232,8 +217,32 @@ export function BulkUploadDialog({
     setLoading(true);
 
     try {
+      let uploadFile: File = file;
+
+      const filename = file.name.toLowerCase();
+      const isExcel = filename.endsWith(".xlsx") || filename.endsWith(".xls");
+      if (isExcel) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+        if (!sheet) {
+          setError("Excel file has no sheets");
+          return;
+        }
+        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+        if (!csv.trim()) {
+          setError("Excel file appears to be empty");
+          return;
+        }
+        const baseName = file.name.replace(/\.(xlsx|xls)$/i, "");
+        uploadFile = new File([csv], `${baseName}.csv`, {
+          type: "text/csv;charset=utf-8;",
+        });
+      }
+
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", uploadFile);
 
       // backend uses viewset action bulk_upload -> /api/admin/{type}/bulk_upload/
       const endpoint =

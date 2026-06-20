@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, BookOpen } from "lucide-react";
 import { TeacherForm } from "../forms/teacher-form";
 import { BulkUploadDialog } from "../dialogs/bulk-upload-dialog";
+import { TeacherSubjectMappingDialog } from "../dialogs/teacher-subject-mapping-dialog";
 
 interface TeachersPageProps {
   token: string | null;
@@ -20,13 +21,40 @@ interface Teacher {
   department_name: string;
 }
 
+
+const normalizeTeachers = (payload: unknown): Teacher[] => {
+  const container = payload as {
+    results?: unknown;
+    data?: unknown;
+    items?: unknown;
+  };
+
+  const list = Array.isArray(payload)
+    ? payload
+    : container.results ?? container.data ?? container.items ?? [];
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map((item: any) => ({
+    id: String(item.id ?? item.pk ?? item.teacher_id ?? ""),
+    name: String(item.name ?? item.full_name ?? ""),
+    email: String(item.email ?? ""),
+    phone: String(item.phone ?? item.phone_number ?? ""),
+    department_name: String(
+      item.department_name ?? item.department?.name ?? item.department ?? ""
+    ),
+  }));
+};
+
 export function TeachersPage({ token }: TeachersPageProps) {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  const [mappingTeacher, setMappingTeacher] = useState<Teacher | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+
 
   useEffect(() => {
     fetchTeachers();
@@ -46,7 +74,7 @@ export function TeachersPage({ token }: TeachersPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setTeachers(data);
+        setTeachers(normalizeTeachers(data));
       }
     } catch (err) {
       console.log("[v0] Teachers fetch error:", err);
@@ -74,7 +102,7 @@ export function TeachersPage({ token }: TeachersPageProps) {
       );
 
       if (response.ok) {
-        setTeachers(teachers.filter((t) => t.id !== id));
+        setTeachers((prev) => prev.filter((t) => t.id !== id));
       } else {
         console.error("Delete failed:", await response.text());
       }
@@ -214,6 +242,16 @@ export function TeachersPage({ token }: TeachersPageProps) {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setMappingTeacher(teacher)}
+                          className="text-foreground hover:text-primary flex items-center gap-1.5"
+                          title="Map Subjects"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          <span className="hidden xl:inline text-xs">Map Subjects</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             setEditingTeacher(teacher);
                             setShowForm(true);
@@ -239,6 +277,14 @@ export function TeachersPage({ token }: TeachersPageProps) {
           </table>
         </div>
       </Card>
+
+      {mappingTeacher && (
+        <TeacherSubjectMappingDialog
+          token={token}
+          teacher={mappingTeacher}
+          onClose={() => setMappingTeacher(null)}
+        />
+      )}
     </div>
   );
 }

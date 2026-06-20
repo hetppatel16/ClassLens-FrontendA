@@ -19,6 +19,27 @@ interface Subject {
   description: string;
 }
 
+const normalizeSubjects = (payload: unknown): Subject[] => {
+  const container = payload as {
+    results?: unknown;
+    data?: unknown;
+    items?: unknown;
+  };
+
+  const list = Array.isArray(payload)
+    ? payload
+    : container.results ?? container.data ?? container.items ?? [];
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map((item: any) => ({
+    id: String(item.id ?? item.pk ?? item.subject_id ?? ""),
+    name: String(item.name ?? item.title ?? ""),
+    code: String(item.code ?? item.subject_code ?? ""),
+    description: String(item.description ?? item.desc ?? ""),
+  }));
+};
+
 export function SubjectsPage({ token }: SubjectsPageProps) {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +66,7 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setSubjects(data);
+        setSubjects(normalizeSubjects(data));
       }
     } catch (err) {
       console.log("[v0] Subjects fetch error:", err);
@@ -67,7 +88,7 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
       );
 
       if (response.ok) {
-        setSubjects(subjects.filter((s) => s.id !== id));
+        setSubjects((prev) => prev.filter((s) => s.id !== id));
       }
     } catch (err) {
       console.log("[v0] Delete error:", err);
@@ -154,9 +175,6 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
                 <th className="text-left p-6 font-semibold text-foreground">
                   Code
                 </th>
-                <th className="text-left p-6 font-semibold text-foreground">
-                  Description
-                </th>
                 <th className="text-right p-6 font-semibold text-foreground">
                   Actions
                 </th>
@@ -166,7 +184,7 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="p-6 text-center text-muted-foreground"
                   >
                     Loading...
@@ -175,7 +193,7 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
               ) : filteredSubjects.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={3}
                     className="p-6 text-center text-muted-foreground"
                   >
                     No subjects found
@@ -192,9 +210,6 @@ export function SubjectsPage({ token }: SubjectsPageProps) {
                     </td>
                     <td className="p-6 text-muted-foreground">
                       {subject.code}
-                    </td>
-                    <td className="p-6 text-muted-foreground">
-                      {subject.description}
                     </td>
                     <td className="p-6">
                       <div className="flex justify-end gap-2">
